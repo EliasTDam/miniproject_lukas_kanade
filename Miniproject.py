@@ -38,7 +38,7 @@ class OpticalFlow():
         else:
             raise Exception("Couldn't find the first frame")
 
-    def runOpticalFlow(self, method="LukasKanade", radius=5):
+    def runOpticalFlow(self, method="LukasKanade", radius=10):
 
         if self.previous_frame is not None:
 
@@ -50,18 +50,33 @@ class OpticalFlow():
 
                 previous_vectors = self.initial_corners.reshape(self.n_features, 2)
 
+                counter = 0
                 while(ret):
+                    print(counter)
                     current_frame = cv.cvtColor(current_frame, cv.COLOR_BGR2GRAY)
 
                     # Run optical flow, and update variables
                     new_vectors = self.lukasKanade(current_frame, self.previous_frame, previous_vectors, radius)
 
-                    new_vectors = new_vectors.reshape(self.n_features, 2)
-                    self.disparity_vectors.append(new_vectors)
-                    previous_vectors = new_vectors
+                    new_point = np.add(previous_vectors, new_vectors)
+
+
+                    # Handle values outside frame limits
+                    for i in range(np.shape(new_point)[0]):
+                        maxy = np.shape(current_frame)[0]-radius-1
+                        maxx = np.shape(current_frame)[1]-radius-1
+                        if new_point[i, 0] >= maxx or new_point[i, 1] >= maxy or new_point[i, 0] <= (radius+1) or new_point[i, 1] <= (radius+1):
+                            new_point[i] = np.subtract(new_point[i], new_vectors[i])
+
+                    #new_vectors = new_vectors.reshape(self.n_features, 2)
+                    self.disparity_vectors.append(new_point)
+                    previous_vectors = new_point
+
+                    print(new_point)
 
                     self.previous_frame = current_frame.copy()
                     ret, current_frame = self.video.read()
+                    counter += 1
 
             elif method == "OpenCV":
 
@@ -116,11 +131,11 @@ class OpticalFlow():
                     b = self.disparity_vectors[frame_number, i, 1]
                     c, d = self.disparity_vectors[frame_number-1, i, 0], self.disparity_vectors[frame_number-1, i, 1]
                     mask = cv.line(mask, (int(a), int(b)), (int(c), int(d)), color[i].tolist(), 2)
-                    frame = cv.circle(frame, (int(self.initial_corners[i, 0, 0]), int(self.initial_corners[i, 0, 1])), 5, color[i].tolist(), -1)
+                    frame = cv.circle(frame, (int(a), int(b)), 5, color[i].tolist(), -1)
                 img = cv.add(frame, mask)
 
                 cv.imshow('frame', img)
-                cv.waitKey(30)
+                cv.waitKey(0)
 
                 ret, frame = self.video.read()
                 frame_number += 1
@@ -128,39 +143,45 @@ class OpticalFlow():
                 print("Visualization finished")
                 break
 
-    def lukasKanade(self, current_frame, previous_frame, previous_points, radius):
+    def lukasKanade(self, c_frame, p_frame, previous_points, radius):
+
+        current_frame = c_frame.copy()
+        previous_frame = p_frame.copy()
 
         disparity_vectors = np.empty((10, 2))
 
         for i in range(self.n_features):
 
             # Step 1: Extract templates for current and previous image
-            slicex = [int(previous_points[i, 0]-radius), int(previous_points[i, 0]+radius+1)]
-            slicey = [int(previous_points[i, 1]-radius), int(previous_points[i, 1]+radius+1)]
+            slicey = [int(previous_points[i, 0]-radius), int(previous_points[i, 0]+radius+1)]
+            slicex = [int(previous_points[i, 1]-radius), int(previous_points[i, 1]+radius+1)]
             template_curr = current_frame[slicex[0]:slicex[1], slicey[0]:slicey[1]]
             template_prev = previous_frame[slicex[0]:slicex[1], slicey[0]:slicey[1]]
+
+            #print(template_prev)
+            #cv.imshow("Template prev", template_prev)
+            #cv.waitKey(0)
 
             # Step 2: Get the T Matrix - The difference in intensities represented as a vector
             t_matrix = np.subtract(template_prev, template_curr).flatten()
 
-            # Step 2: Get the gradients for the previous image
-            template_curr = current_frame[slicex[0]-1:slicex[1]+1, slicey[0]-1:slicey[1]+1]
-            template_prev = previous_frame[slicex[0]-1:slicex[1]+1, slicey[0]-1:slicey[1]+1]
+            # Step 3: Get the gradients for the previous image
+            #template_curr = current_frame[slicex[0]-1:slicex[1]+1, slicey[0]-1:slicey[1]+1]
+            #template_prev = previous_frame[slicex[0]-1:slicex[1]+1, slicey[0]-1:slicey[1]+1]
 
-            cv.imshow("Template_curr", template_curr)
-            cv.waitKey(0)
+            gradient_prevx = cv.Sobel(template_prev, -1, 1, 0).flatten()
+            gradient_prevy = cv.Sobel(template_prev, -1, 0, 1).flatten()
 
-            gradient_currx = cv.Sobel(template_curr, -1, 1, 0)
-            gradient_curry = cv.Sobel(template_curr, -1, 0, 1)
-            gradient_prevx = cv.Sobel(template_prev, -1, 1, 0)
-            gradient_prevy = cv.Sobel(template_prev, -1, 0, 1)
+            S = np.column_stack((gradient_prevx, gradient_prevy))
 
-            print(f"Shape template: {template_curr.shape}")
-            print(f"Shape gradient: {gradient_currx.shape}")
-            print("--------------------------------------")
+            # Step 4: Least squares solution
+            u, v = np.linalg.lstsq(S, t_matrix)[0]
 
+            disparity_vectors[i] = [u, v]
 
+        print("Frame complete")
 
+        return disparity_vectors
 
 
 
