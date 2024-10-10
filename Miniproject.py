@@ -62,9 +62,6 @@ class OpticalFlow():
                     new_vectors = self.lukasKanade(current_frame, self.previous_frame, previous_points, radius)
 
                     new_point = np.add(previous_points, new_vectors)
-                    
-                    # Check for overly large movements
-                    if np.magn
 
                     # Handle values outside frame limits
                     for i in range(np.shape(new_point)[0]):
