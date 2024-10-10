@@ -49,20 +49,22 @@ class OpticalFlow():
 
             # Initialize variables and get initial values
             ret, current_frame = self.video.read()
-            previous_vectors = []
+            previous_points = []
 
             if method == "LukasKanade":
 
-                previous_vectors = self.initial_corners.reshape(self.n_features, 2)
+                previous_points = self.initial_corners.reshape(self.n_features, 2)
 
                 while(ret):
                     current_frame = cv.cvtColor(current_frame, cv.COLOR_BGR2GRAY)
 
                     # Run optical flow, and update variables
-                    new_vectors = self.lukasKanade(current_frame, self.previous_frame, previous_vectors, radius)
+                    new_vectors = self.lukasKanade(current_frame, self.previous_frame, previous_points, radius)
 
-                    new_point = np.add(previous_vectors, new_vectors)
+                    new_point = np.add(previous_points, new_vectors)
                     
+                    # Check for overly large movements
+                    if np.magn
 
                     # Handle values outside frame limits
                     for i in range(np.shape(new_point)[0]):
@@ -73,14 +75,14 @@ class OpticalFlow():
 
                     #new_vectors = new_vectors.reshape(self.n_features, 2)
                     self.disparity_vectors.append(new_point)
-                    previous_vectors = new_point
+                    previous_points = new_point
 
                     self.previous_frame = current_frame.copy()
                     ret, current_frame = self.video.read()
 
             elif method == "OpenCV":
 
-                previous_vectors = self.initial_corners
+                previous_points = self.initial_corners
 
                 while(ret):
                     current_frame = cv.cvtColor(current_frame, cv.COLOR_BGR2GRAY)
@@ -93,12 +95,12 @@ class OpticalFlow():
                     new_vectors, st, err = cv.calcOpticalFlowPyrLK(
                         self.previous_frame,
                         current_frame,
-                        previous_vectors,
+                        previous_points,
                         None,
                         **lk_params
                     )
 
-                    previous_vectors = new_vectors
+                    previous_points = new_vectors
                     new_vectors = new_vectors.reshape(self.n_features, 2)
                     self.disparity_vectors.append(new_vectors)
 
