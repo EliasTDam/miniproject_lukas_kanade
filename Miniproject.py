@@ -55,7 +55,7 @@ class OpticalFlow():
                     # Run optical flow, and update variables
                     new_vectors = lukasKanade(current_frame, self.previous_frame, previous_vectors)
 
-                    new_vectors.reshape(self.n_features, 2)
+                    new_vectors = new_vectors.reshape(self.n_features, 2)
                     self.disparity_vectors.append(new_vectors)
                     previous_vectors = new_vectors
 
@@ -63,6 +63,8 @@ class OpticalFlow():
                     ret, current_frame = self.video.read()
 
             elif method == "OpenCV":
+
+                previous_vectors = self.initial_corners
 
                 while(ret):
                     current_frame = cv.cvtColor(current_frame, cv.COLOR_BGR2GRAY)
@@ -75,14 +77,14 @@ class OpticalFlow():
                     new_vectors, st, err = cv.calcOpticalFlowPyrLK(
                         self.previous_frame,
                         current_frame,
-                        self.initial_corners,
-                        nextPts=None,
+                        previous_vectors,
+                        None,
                         **lk_params
                     )
-
-                    new_vectors.reshape(self.n_features, 2)
-                    self.disparity_vectors.append(new_vectors)
+                    
                     previous_vectors = new_vectors
+                    new_vectors = new_vectors.reshape(self.n_features, 2)
+                    self.disparity_vectors.append(new_vectors)
 
                     self.previous_frame = current_frame.copy()
                     ret, current_frame = self.video.read()
@@ -90,9 +92,7 @@ class OpticalFlow():
             else:
                 raise Exception(f"{method} method is not supported")
 
-            print(f"Shape of disparity vectors: {np.shape(self.disparity_vectors)}")
             self.disparity_vectors = np.stack(self.disparity_vectors, axis=0)
-            print(f"Shape of disparity vectors: {np.shape(self.disparity_vectors)}")
 
         else:
             raise Exception("Couldn't find the first frame - Run corner detection first")
@@ -104,20 +104,24 @@ class OpticalFlow():
         ret, frame = self.video.read()
         frame_number = 1
 
+        mask = np.zeros_like(frame)
         color = np.random.randint(0, 255, (100, 3))
 
         while(ret):
 
             # draw the tracks
-            print(f"Shape of disp: {np.shape(self.disparity_vectors)[1]}")
+            #print(f"Shape of disp: {np.shape(self.disparity_vectors)[1]}")
             for i in range(np.shape(self.disparity_vectors)[1]):
-                print(f"Type of disparity: {type(self.disparity_vectors[0])}")
-                a = self.disparity_vectors[frame_number, i, 0, 0]
-                b = self.disparity_vectors[frame_number, i, 0, 1]
-                c, d = self.disparity_vectors[frame_number+1, i, 0, 0], self.disparity_vectors[frame_number+1, i, 0, 1]
+                #print(f"Type of disparity: {type(self.disparity_vectors[0])}")
+                a = self.disparity_vectors[frame_number, i, 0]
+                b = self.disparity_vectors[frame_number, i, 1]
+                c, d = self.disparity_vectors[frame_number-1, i, 0], self.disparity_vectors[frame_number-1, i, 1]
+                #if i == 0:
+                    #print(f"A: {a}, B: {b}, C: {c}, D: {d}")
                 mask = cv.line(mask, (int(a), int(b)), (int(c), int(d)), color[i].tolist(), 2)
-                frame = cv.circle(frame, (int(a), int(b)), 5, color[i].tolist(), -1)
+                frame = cv.circle(frame, (int(self.initial_corners[i, 0, 0]), int(self.initial_corners[i, 0, 1])), 5, color[i].tolist(), -1)
             img = cv.add(frame, mask)
+            #print("---------------------")
 
             cv.imshow('frame', img)
             cv.waitKey(30)
