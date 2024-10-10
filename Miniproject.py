@@ -2,6 +2,9 @@ import cv2 as cv
 import numpy as np
 import argparse
 
+from werkzeug.security import SALT_CHARS
+
+
 class OpticalFlow():
 
     def __init__(self, video_path="", n_features=10):
@@ -12,6 +15,8 @@ class OpticalFlow():
         self.initial_corners = []
         self.previous_frame = None
         self.disparity_vectors = []
+        self.ill_conditioned = 0
+        self.good_conditioned = 0
 
     def cornerDetection(self):
         ret, first_frame = self.video.read()
@@ -38,7 +43,7 @@ class OpticalFlow():
         else:
             raise Exception("Couldn't find the first frame")
 
-    def runOpticalFlow(self, method="LukasKanade", radius=10):
+    def runOpticalFlow(self, method="LukasKanade", radius=5):
 
         if self.previous_frame is not None:
 
@@ -50,16 +55,14 @@ class OpticalFlow():
 
                 previous_vectors = self.initial_corners.reshape(self.n_features, 2)
 
-                counter = 0
                 while(ret):
-                    print(counter)
                     current_frame = cv.cvtColor(current_frame, cv.COLOR_BGR2GRAY)
 
                     # Run optical flow, and update variables
                     new_vectors = self.lukasKanade(current_frame, self.previous_frame, previous_vectors, radius)
 
                     new_point = np.add(previous_vectors, new_vectors)
-
+                    
 
                     # Handle values outside frame limits
                     for i in range(np.shape(new_point)[0]):
@@ -72,11 +75,8 @@ class OpticalFlow():
                     self.disparity_vectors.append(new_point)
                     previous_vectors = new_point
 
-                    print(new_point)
-
                     self.previous_frame = current_frame.copy()
                     ret, current_frame = self.video.read()
-                    counter += 1
 
             elif method == "OpenCV":
 
@@ -158,28 +158,29 @@ class OpticalFlow():
             template_curr = current_frame[slicex[0]:slicex[1], slicey[0]:slicey[1]]
             template_prev = previous_frame[slicex[0]:slicex[1], slicey[0]:slicey[1]]
 
-            #print(template_prev)
-            #cv.imshow("Template prev", template_prev)
-            #cv.waitKey(0)
-
             # Step 2: Get the T Matrix - The difference in intensities represented as a vector
             t_matrix = np.subtract(template_prev, template_curr).flatten()
 
             # Step 3: Get the gradients for the previous image
-            #template_curr = current_frame[slicex[0]-1:slicex[1]+1, slicey[0]-1:slicey[1]+1]
             #template_prev = previous_frame[slicex[0]-1:slicex[1]+1, slicey[0]-1:slicey[1]+1]
 
-            gradient_prevx = cv.Sobel(template_prev, -1, 1, 0).flatten()
-            gradient_prevy = cv.Sobel(template_prev, -1, 0, 1).flatten()
+            # Use Scharr filter for good gradients
+            gradient_prevx = cv.Sobel(template_prev, -1, 1, 0, ksize=-1).flatten()
+            gradient_prevy = cv.Sobel(template_prev, -1, 0, 1, ksize=-1).flatten()
 
             S = np.column_stack((gradient_prevx, gradient_prevy))
 
             # Step 4: Least squares solution
-            u, v = np.linalg.lstsq(S, t_matrix)[0]
+            u, v = np.linalg.lstsq(S, t_matrix, rcond=0.3)[0]
 
-            disparity_vectors[i] = [u, v]
-
-        print("Frame complete")
+            # If S is ill-conditioned, ignore.
+            conditioning = np.linalg.cond(S)
+            if conditioning > 1000:
+                disparity_vectors[i] = [0, 0]
+                self.ill_conditioned += 1
+            else:
+                disparity_vectors[i] = [u, v]
+                self.good_conditioned +=1
 
         return disparity_vectors
 
@@ -190,6 +191,7 @@ def main():
     of = OpticalFlow("slow_traffic_small.mp4")
     of.cornerDetection()
     of.runOpticalFlow("LukasKanade")
+    print(f"Percentage of ill conditioned: {(of.ill_conditioned/(of.ill_conditioned+of.good_conditioned))*100} %")
     of.visualize()
 
 main()
