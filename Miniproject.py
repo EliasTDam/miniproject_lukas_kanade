@@ -5,8 +5,6 @@ import numpy as np
 import argparse
 import math
 
-import pprint
-
 parser = argparse.ArgumentParser(description="Lucas-Kanade Optical Flow")
 parser.add_argument('--method', type=str, 
         help='Method used to solve the optical flow')
@@ -24,7 +22,7 @@ parser.add_argument('--manual', action='store_true', help='Enables manual contro
 args = parser.parse_args()
 
 
-class OpticalFlow:
+class OpticalFlow():
     def __init__(self, video_path="", n_features=16, debug=False):
         """Initialize the OpticalFlow class with video path and number of features."""
 
@@ -38,6 +36,8 @@ class OpticalFlow:
         self.initial_corners = []
         self.prev_frame = None
         self.disparity_vectors = []
+        self.ill_conditioned = 0
+        self.good_conditioned = 0
 
         self.templates = []
 
@@ -76,8 +76,9 @@ class OpticalFlow:
     def cornerDetection(self):
         """Detect corners in the first frame of the video."""
 
-        ret, first_frame = self.video.read()
 
+        ret, first_frame = self.video.read()
+  
         if not ret:
             raise Exception("Couldn't find the first frame")
         
@@ -245,6 +246,7 @@ class OpticalFlow:
                 self.prev_frame = crnt_frame_gray.copy()
                 ret, crnt_frame = self.video.read()
 
+
         else:
             raise Exception(f"{method} method is not supported")
 
@@ -269,6 +271,7 @@ class OpticalFlow:
         mask = np.zeros_like(frame)
         color = color
 
+
         frame_number = 0
 
         while True:
@@ -277,6 +280,7 @@ class OpticalFlow:
                 break
             if frame_number < 0:
                 frame_number = 0
+
 
             self.video.set(cv.CAP_PROP_POS_FRAMES, frame_number)
 
@@ -296,7 +300,6 @@ class OpticalFlow:
             img = cv.add(frame, mask)
             
             out.write(img)
-
             frame_number += 1
 
     def visualize(self, disp_a, disp_b, manual_control=False):
@@ -400,9 +403,6 @@ def main():
 
     print("Combining both results to compare")
     of.visualize(ocv_disp_vector, rob7_disp_vector, manual_control=manual)
-
-   
-
 
     print("* ----------------------------------------- *")   
 
